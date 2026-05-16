@@ -208,7 +208,7 @@ function TonightView({ entries, preference, setPreference, foodPairing, setFoodP
           width: '100%', padding: '11px 14px', borderRadius: '10px',
           border: '1px solid #ddd4c8', background: '#fff',
           fontSize: '14px', color: '#2c1810',
-          marginBottom: '18px', outline: 'none',
+          marginBottom: '18px', fontSize: '16px', outline: 'none',
         }}
       />
 
@@ -539,7 +539,7 @@ export default function WineCellar() {
                     border: '1px solid #d4a830', borderRadius: '8px',
                     fontSize: '13px', fontFamily: 'Georgia, serif',
                     color: '#2c1810', background: '#fff', resize: 'none',
-                    outline: 'none', marginBottom: '12px',
+                    fontSize: '16px', outline: 'none', marginBottom: '12px',
                   }}
                 />
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -636,7 +636,7 @@ export default function WineCellar() {
                     width: '100%', padding: '12px 14px', borderRadius: '10px',
                     border: '1px solid #ddd4c8', background: '#fff',
                     fontSize: '14px', color: '#2c1810',
-                    marginBottom: '6px', outline: 'none',
+                    marginBottom: '6px', fontSize: '16px', outline: 'none',
                   }}
                 />
                 <div style={{ fontSize: '12px', color: '#9a7060', fontFamily: 'Georgia, serif', marginBottom: '12px', textAlign: 'right' }}>
