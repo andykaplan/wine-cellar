@@ -1,0 +1,16 @@
+{
+  "name": "wine-cellar",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "next": "^16.2.6",
+    "react": "^18",
+    "react-dom": "^18"
+  }
+}
