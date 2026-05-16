@@ -67,8 +67,11 @@ export async function POST(request) {
     })
 
     const text = message.content.find(b => b.type === 'text')?.text || ''
-    const cleaned = text.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
+    let cleaned = text
+    cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/g, '')
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('No JSON object found in response: ' + text.slice(0, 200))
+    const parsed = JSON.parse(jsonMatch[0])
 
     return Response.json(parsed)
   } catch (err) {

@@ -72,8 +72,14 @@ Please recommend the best 2 wines for me to drink tonight.`
     })
 
     const text = message.content.find(b => b.type === 'text')?.text || ''
-    const cleaned = text.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
+    // Robustly extract JSON - handle fences, leading text, trailing text
+    let cleaned = text
+    // Strip markdown fences
+    cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/g, '')
+    // Extract just the JSON object if there's surrounding text
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('No JSON object found in response: ' + text.slice(0, 200))
+    const parsed = JSON.parse(jsonMatch[0])
 
     return Response.json(parsed)
   } catch (err) {

@@ -1,5 +1,12 @@
 import './globals.css'
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+}
+
 export const metadata = {
   title: 'Cave Personnelle',
   description: 'Your personal wine journal',
@@ -8,12 +15,6 @@ export const metadata = {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'Cave Personnelle',
-  },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
   },
 }
 
