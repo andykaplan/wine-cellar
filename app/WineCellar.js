@@ -154,7 +154,7 @@ function TonightView({ entries, preference, setPreference, foodPairing, setFoodP
     }
     setRecoLoading(true); setRecoError(null); setReco(null)
     try {
-      const res = await fetch('/api/recommend', {
+      const res = await fetch(window.location.origin + '/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cellar: entries, preference, foodPairing }),
@@ -364,7 +364,7 @@ export default function WineCellar() {
         }
       }
 
-      const res = await fetch('/api/analyze', {
+      const res = await fetch(window.location.origin + '/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
