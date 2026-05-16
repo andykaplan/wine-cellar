@@ -142,6 +142,166 @@ function resizeImage(dataUrl) {
   })
 }
 
+
+// ── Tonight View ─────────────────────────────────────────────────────────────
+function TonightView({ entries, preference, setPreference, foodPairing, setFoodPairing,
+  reco, setReco, recoLoading, setRecoLoading, recoError, setRecoError }) {
+
+  const getRecommendation = async () => {
+    if (entries.length === 0) {
+      setRecoError('Your cellar is empty — scan some labels first!')
+      return
+    }
+    setRecoLoading(true); setRecoError(null); setReco(null)
+    try {
+      const res = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cellar: entries, preference, foodPairing }),
+      })
+      const data = await res.json()
+      if (data.error) setRecoError(data.error)
+      else setReco(data)
+    } catch (e) {
+      setRecoError('Request failed: ' + e.message)
+    }
+    setRecoLoading(false)
+  }
+
+  const btnBase = {
+    flex: 1, padding: '10px 6px', border: '2px solid #c8b09a',
+    borderRadius: '8px', background: 'none', cursor: 'pointer',
+    fontFamily: "'Playfair Display', Georgia, serif", fontSize: '13px',
+    fontWeight: '600', transition: 'all 0.15s',
+  }
+  const btnActive = { ...btnBase, background: 'linear-gradient(135deg, #6b1a0e, #8b2500)', color: '#f5e6cc', borderColor: '#8b2500' }
+  const btnInactive = { ...btnBase, color: '#7a5040' }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: '20px', fontWeight: '700', color: '#2c1810', marginBottom: '4px' }}>
+        What should I drink tonight?
+      </div>
+      <div style={{ fontSize: '13px', color: '#9a7060', fontFamily: 'Georgia, serif', marginBottom: '20px' }}>
+        The sommelier will choose from your cellar, prioritizing bottles that need drinking soon.
+      </div>
+
+      {/* Preference */}
+      <div style={labelStyle}>I am in the mood for</div>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        {[['', 'Either'], ['red', '🍷 Red'], ['white', '🥂 White']].map(([val, label]) => (
+          <button key={val} onClick={() => setPreference(val)}
+            style={preference === val ? btnActive : btnInactive}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Food pairing */}
+      <div style={labelStyle}>Food pairing (optional)</div>
+      <input
+        type="text"
+        placeholder="e.g. grilled salmon, pasta, cheese board…"
+        value={foodPairing}
+        onChange={e => setFoodPairing(e.target.value)}
+        style={{
+          width: '100%', padding: '11px 14px', borderRadius: '10px',
+          border: '1px solid #ddd4c8', background: '#fff',
+          fontSize: '14px', color: '#2c1810',
+          marginBottom: '18px', outline: 'none',
+        }}
+      />
+
+      <button onClick={getRecommendation} disabled={recoLoading} style={{
+        width: '100%', padding: '15px',
+        background: recoLoading ? '#c0a090' : 'linear-gradient(135deg, #6b1a0e, #8b2500)',
+        color: '#f5e6cc', border: 'none', borderRadius: '10px',
+        fontSize: '15px', fontFamily: "'Playfair Display', Georgia, serif",
+        fontWeight: '700', cursor: recoLoading ? 'not-allowed' : 'pointer',
+        letterSpacing: '0.04em', marginBottom: '20px',
+        boxShadow: '0 4px 14px rgba(100,20,10,0.25)',
+      }}>
+        {recoLoading ? 'The sommelier is thinking…' : 'Ask the Sommelier'}
+      </button>
+
+      {recoError && (
+        <div style={{ background: '#fff5f0', border: '1px solid #f0c8b8', borderRadius: '10px', padding: '14px 16px', color: '#8b2500', fontSize: '14px', fontFamily: 'Georgia, serif', marginBottom: '16px' }}>
+          ⚠️ {recoError}
+        </div>
+      )}
+
+      {reco && (
+        <div>
+          {/* Sommelier note */}
+          {reco.sommelierNote && (
+            <div style={{ background: '#fdfaf7', border: '1px solid #e8ddd0', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', color: '#5c3a28', fontFamily: "'Lora', Georgia, serif", fontStyle: 'italic', marginBottom: '16px', lineHeight: 1.6 }}>
+              🧑‍🍳 {reco.sommelierNote}
+            </div>
+          )}
+
+          {/* First choice */}
+          <RecoCard wine={reco.firstChoice} rank={1} />
+
+          {/* Second choice */}
+          {reco.secondChoice && <RecoCard wine={reco.secondChoice} rank={2} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecoCard({ wine, rank }) {
+  const isFirst = rank === 1
+  return (
+    <div style={{
+      background: '#fff',
+      border: isFirst ? '2px solid #8b2500' : '1px solid #e8ddd0',
+      borderRadius: '14px', marginBottom: '14px', overflow: 'hidden',
+      boxShadow: isFirst ? '0 4px 20px rgba(100,20,10,0.14)' : '0 2px 8px rgba(80,30,20,0.06)',
+    }}>
+      <div style={{
+        background: isFirst ? 'linear-gradient(135deg, #3d0c02, #6b1a0e)' : 'linear-gradient(135deg, #4a3828, #6b5040)',
+        padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px',
+      }}>
+        <div style={{
+          background: isFirst ? '#f5e6cc' : 'rgba(245,230,200,0.3)',
+          color: isFirst ? '#6b1a0e' : '#f5e6cc',
+          borderRadius: '50%', width: '28px', height: '28px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', fontSize: '14px',
+          flexShrink: 0,
+        }}>{rank}</div>
+        <div>
+          <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: '15px', fontWeight: '700', color: '#f5e6cc', lineHeight: 1.3 }}>
+            {wine.name}
+          </div>
+          <div style={{ fontSize: '12px', color: 'rgba(245,230,200,0.7)' }}>{wine.vintage}</div>
+        </div>
+        {isFirst && (
+          <div style={{ marginLeft: 'auto', fontSize: '11px', background: '#f5e6cc', color: '#6b1a0e', padding: '3px 8px', borderRadius: '12px', fontFamily: 'Georgia, serif', fontWeight: '700', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+            TONIGHT'S PICK
+          </div>
+        )}
+      </div>
+      <div style={{ padding: '14px 16px' }}>
+        <div style={{ fontSize: '13px', color: '#2c1810', fontFamily: "'Lora', Georgia, serif", lineHeight: 1.7, marginBottom: '12px' }}>
+          {wine.reason}
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ flex: 1, background: '#fdfaf7', borderRadius: '8px', padding: '8px 10px', border: '1px solid #f0e8de' }}>
+            <div style={labelStyle}>Serve at</div>
+            <div style={{ fontSize: '12px', color: '#2c1810', fontFamily: 'Georgia, serif' }}>{wine.serveTemp}</div>
+          </div>
+          <div style={{ flex: 1, background: '#fdfaf7', borderRadius: '8px', padding: '8px 10px', border: '1px solid #f0e8de' }}>
+            <div style={labelStyle}>Decant</div>
+            <div style={{ fontSize: '12px', color: '#2c1810', fontFamily: 'Georgia, serif' }}>{wine.decant}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function WineCellar() {
   const [view, setView]               = useState('scan')
   const [imageData, setImageData]     = useState(null)
@@ -153,6 +313,11 @@ export default function WineCellar() {
   const [clarifyText, setClarifyText] = useState('')
   const [entries, setEntries]         = useState([])
   const [search, setSearch]           = useState('')
+  const [preference, setPreference]   = useState('')   // 'red' | 'white' | ''
+  const [foodPairing, setFoodPairing] = useState('')
+  const [reco, setReco]               = useState(null)
+  const [recoLoading, setRecoLoading] = useState(false)
+  const [recoError, setRecoError]     = useState(null)
   const fileRef  = useRef()
   const extraRef = useRef()
 
@@ -268,7 +433,7 @@ export default function WineCellar() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', background: '#fff', borderBottom: '2px solid #e8ddd0', position: 'sticky', top: 0, zIndex: 10 }}>
-        {['scan', 'cellar'].map(tab => (
+        {['scan', 'tonight', 'cellar'].map(tab => (
           <button key={tab} onClick={() => setView(tab)} style={{
             flex: 1, padding: '13px', background: 'none', border: 'none',
             borderBottom: view === tab ? '2px solid #8b2500' : '2px solid transparent',
@@ -276,7 +441,7 @@ export default function WineCellar() {
             fontFamily: "'Playfair Display', Georgia, serif", fontSize: '14px',
             fontWeight: view === tab ? '700' : '400', cursor: 'pointer', letterSpacing: '0.03em',
           }}>
-            {tab === 'scan' ? '📸 Scan Label' : `📚 My Cellar (${entries.length})`}
+            {tab === 'scan' ? '📸 Scan Label' : tab === 'tonight' ? '🍾 Tonight' : `📚 My Cellar (${entries.length})`}
           </button>
         ))}
       </div>
@@ -437,6 +602,18 @@ export default function WineCellar() {
               </div>
             )}
           </div>
+        )}
+
+        {/* TONIGHT VIEW */}
+        {view === 'tonight' && (
+          <TonightView
+            entries={entries}
+            preference={preference} setPreference={setPreference}
+            foodPairing={foodPairing} setFoodPairing={setFoodPairing}
+            reco={reco} setReco={setReco}
+            recoLoading={recoLoading} setRecoLoading={setRecoLoading}
+            recoError={recoError} setRecoError={setRecoError}
+          />
         )}
 
         {/* CELLAR VIEW */}
