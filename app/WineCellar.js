@@ -2,19 +2,21 @@
 
 import { useState, useEffect, useRef } from 'react'
 
-const STORE_KEY = 'wine-cellar-v2'
-
-function loadEntries() {
+async function loadEntries() {
   try {
-    const saved = localStorage.getItem(STORE_KEY)
-    if (saved) return JSON.parse(saved)
-  } catch (_) {}
-  return []
+    const res = await fetch(window.location.origin + '/api/cellar')
+    if (!res.ok) return []
+    return await res.json()
+  } catch (_) { return [] }
 }
 
-function saveEntries(entries) {
+async function saveEntries(entries) {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(entries))
+    await fetch(window.location.origin + '/api/cellar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entries),
+    })
   } catch (_) {}
 }
 
@@ -208,7 +210,7 @@ function TonightView({ entries, preference, setPreference, foodPairing, setFoodP
           width: '100%', padding: '11px 14px', borderRadius: '10px',
           border: '1px solid #ddd4c8', background: '#fff',
           fontSize: '14px', color: '#2c1810',
-          marginBottom: '18px', fontSize: '16px', outline: 'none',
+          marginBottom: '18px', outline: 'none',
         }}
       />
 
@@ -321,13 +323,18 @@ export default function WineCellar() {
   const fileRef  = useRef()
   const extraRef = useRef()
 
+  const [storageReady, setStorageReady] = useState(false)
+
   useEffect(() => {
-    setEntries(loadEntries())
+    loadEntries().then(data => {
+      setEntries(data)
+      setStorageReady(true)
+    })
   }, [])
 
-  const persistAndSet = (updated) => {
+  const persistAndSet = async (updated) => {
     setEntries(updated)
-    saveEntries(updated)
+    await saveEntries(updated)
   }
 
   const handleImage = (file) => {
@@ -388,16 +395,16 @@ export default function WineCellar() {
     setLoading(false)
   }
 
-  const addToCellar = () => {
+  const addToCellar = async () => {
     if (!result) return
     const entry = { ...result, id: Date.now().toString(), imageData, scannedAt: new Date().toISOString() }
-    persistAndSet([entry, ...entries])
+    await persistAndSet([entry, ...entries])
     setResult(null); setImageData(null)
     setExtraImages([]); setClarifyText(''); setClarifying(false)
     setView('cellar')
   }
 
-  const deleteEntry = (id) => persistAndSet(entries.filter(e => e.id !== id))
+  const deleteEntry = async (id) => await persistAndSet(entries.filter(e => e.id !== id))
 
   const reset = () => {
     setImageData(null); setResult(null); setError(null)
@@ -539,7 +546,7 @@ export default function WineCellar() {
                     border: '1px solid #d4a830', borderRadius: '8px',
                     fontSize: '13px', fontFamily: 'Georgia, serif',
                     color: '#2c1810', background: '#fff', resize: 'none',
-                    fontSize: '16px', outline: 'none', marginBottom: '12px',
+                    outline: 'none', marginBottom: '12px',
                   }}
                 />
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -619,7 +626,12 @@ export default function WineCellar() {
         {/* CELLAR VIEW */}
         {view === 'cellar' && (
           <div>
-            {entries.length === 0 ? (
+            {!storageReady ? (
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: '#9a7060' }}>
+                <div style={{ fontSize: '32px', marginBottom: '12px' }}>🍷</div>
+                <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: '16px', color: '#7a6055' }}>Loading your cellar…</div>
+              </div>
+            ) : entries.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: '#9a7060' }}>
                 <div style={{ fontSize: '52px', marginBottom: '12px' }}>🏚️</div>
                 <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: '18px', color: '#5c3a28', marginBottom: '8px' }}>Your cellar is empty</div>
@@ -636,7 +648,7 @@ export default function WineCellar() {
                     width: '100%', padding: '12px 14px', borderRadius: '10px',
                     border: '1px solid #ddd4c8', background: '#fff',
                     fontSize: '14px', color: '#2c1810',
-                    marginBottom: '6px', fontSize: '16px', outline: 'none',
+                    marginBottom: '6px', outline: 'none',
                   }}
                 />
                 <div style={{ fontSize: '12px', color: '#9a7060', fontFamily: 'Georgia, serif', marginBottom: '12px', textAlign: 'right' }}>
