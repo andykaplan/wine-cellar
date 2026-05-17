@@ -1,6 +1,6 @@
 import { put, list } from '@vercel/blob'
 
-const BLOB_PATHNAME = 'cellar/wine-cellar-v2.json'
+const BLOB_PATHNAME = process.env.NODE_ENV === 'development' ? 'cellar/dev-wine-cellar-v2.json' : 'cellar/wine-cellar-v2.json'
 
 export async function GET() {
   try {
