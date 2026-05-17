@@ -3,6 +3,32 @@
 import { useState, useEffect, useRef } from 'react'
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
+
+// Image helpers — each label photo stored as its own Blob
+async function uploadImage(id, imageData) {
+  try {
+    await fetch(window.location.origin + '/api/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, imageData }),
+    })
+  } catch (_) {}
+}
+
+async function fetchImageUrl(id) {
+  try {
+    const res = await fetch(window.location.origin + '/api/image?id=' + id)
+    const data = await res.json()
+    return data.url || null
+  } catch (_) { return null }
+}
+
+async function deleteImage(id) {
+  try {
+    await fetch(window.location.origin + '/api/image?id=' + id, { method: 'DELETE' })
+  } catch (_) {}
+}
+
 async function loadEntries() {
   try {
     const res = await fetch(window.location.origin + '/api/cellar')
@@ -13,10 +39,12 @@ async function loadEntries() {
 
 async function saveEntries(entries) {
   try {
+    // Strip imageData — images stored separately via /api/image
+    const stripped = entries.map(({ imageData, ...rest }) => rest)
     await fetch(window.location.origin + '/api/cellar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(entries),
+      body: JSON.stringify(stripped),
     })
   } catch (_) {}
 }
@@ -658,6 +686,15 @@ function resizeImage(dataUrl) {
   })
 }
 
+// ── Export / Import helpers ──────────────────────────────────────────────────
+function downloadJSON(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function WineCellar() {
   const [view, setView]                   = useState('scan')
@@ -685,8 +722,15 @@ export default function WineCellar() {
   const extraRef = useRef()
 
   useEffect(() => {
-    Promise.all([loadEntries(), loadHistory()]).then(([data, hist]) => {
-      setEntries(data); setHistory(hist); setStorageReady(true)
+    Promise.all([loadEntries(), loadHistory()]).then(async ([data, hist]) => {
+      // Load image URLs for each entry from Blob
+      const withImages = await Promise.all(
+        data.map(async e => {
+          const url = await fetchImageUrl(e.id)
+          return { ...e, imageData: url }
+        })
+      )
+      setEntries(withImages); setHistory(hist); setStorageReady(true)
     })
   }, [])
 
@@ -750,7 +794,11 @@ export default function WineCellar() {
 
   const addToCellar = async () => {
     if (!result) return
-    const entry = { ...result, quantity: 1, id: Date.now().toString(), imageData, scannedAt: new Date().toISOString() }
+    const id = Date.now().toString()
+    // Upload image to Blob separately, store URL in entry
+    if (imageData) await uploadImage(id, imageData)
+    const imgUrl = imageData ? await fetchImageUrl(id) : null
+    const entry = { ...result, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
     await persistAndSet([entry, ...entries])
     setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
     setView('cellar')
@@ -758,8 +806,13 @@ export default function WineCellar() {
 
   const incrementDuplicate = async () => {
     if (!duplicateEntry) return
+    let imgUrl = duplicateEntry.imageData
+    if (imageData) {
+      await uploadImage(duplicateEntry.id, imageData)
+      imgUrl = await fetchImageUrl(duplicateEntry.id)
+    }
     const updated = entries.map(e =>
-      e.id === duplicateEntry.id ? { ...e, quantity: (e.quantity || 1) + 1 } : e
+      e.id === duplicateEntry.id ? { ...e, quantity: (e.quantity || 1) + 1, imageData: imgUrl } : e
     )
     await persistAndSet(updated)
     setPendingResult(null); setDuplicateEntry(null)
@@ -776,7 +829,10 @@ export default function WineCellar() {
     setView('cellar')
   }
 
-  const deleteEntry = async (id) => await persistAndSet(entries.filter(e => e.id !== id))
+  const deleteEntry = async (id) => {
+    await deleteImage(id)
+    await persistAndSet(entries.filter(e => e.id !== id))
+  }
 
   const handleQuantityChange = async (id, newQty) => {
     if (newQty < 1) return
@@ -1045,8 +1101,16 @@ export default function WineCellar() {
                   value={search} onChange={e => setSearch(e.target.value)}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1px solid #ddd4c8', background: '#fff', fontSize: '16px', color: '#2c1810', marginBottom: '6px', outline: 'none' }}
                 />
-                <div style={{ fontSize: '12px', color: '#9a7060', fontFamily: 'Georgia, serif', marginBottom: '12px', textAlign: 'right' }}>
-                  {filtered.length} of {entries.length} wine{entries.length !== 1 ? 's' : ''} · {entries.reduce((s, e) => s + (e.quantity || 1), 0)} bottle{entries.reduce((s, e) => s + (e.quantity || 1), 0) !== 1 ? 's' : ''}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '12px', color: '#9a7060', fontFamily: 'Georgia, serif' }}>
+                    {filtered.length} of {entries.length} wine{entries.length !== 1 ? 's' : ''} · {entries.reduce((s, e) => s + (e.quantity || 1), 0)} bottle{entries.reduce((s, e) => s + (e.quantity || 1), 0) !== 1 ? 's' : ''}
+                  </div>
+                  <button onClick={() => {
+                    downloadJSON({ cellar: entries, history, exportedAt: new Date().toISOString() }, `cave-personnelle-${new Date().toISOString().slice(0,10)}.json`)
+                  }}
+                    style={{ background: 'none', border: '1px solid #c8b09a', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', color: '#6b3a2a', cursor: 'pointer', fontFamily: 'Georgia, serif' }}>
+                    ⬇ Export backup
+                  </button>
                 </div>
                 {filtered.length === 0
                   ? <div style={{ textAlign: 'center', color: '#9a7060', padding: '24px', fontSize: '14px' }}>No wines match "{search}"</div>
