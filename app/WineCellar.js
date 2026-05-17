@@ -69,10 +69,16 @@ function Row({ label, value }) {
 }
 
 // ── WineCard ──────────────────────────────────────────────────────────────────
-function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, isHighlighted }) {
+function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, onReanalyze, isHighlighted }) {
   const [expanded, setExpanded] = useState(false)
   const [ratingMode, setRatingMode] = useState(false)
+  const [reanalyzeMode, setReanalyzeMode] = useState(false)
   const [hoveredRating, setHoveredRating] = useState(0)
+  const [extraImages, setExtraImages] = useState([])
+  const [extraText, setExtraText] = useState('')
+  const [reanalyzing, setReanalyzing] = useState(false)
+  const [reanalyzeError, setReanalyzeError] = useState(null)
+  const reanalyzeFileRef = useRef()
   const verdict = VERDICT_CONFIG[entry.verdict] || VERDICT_CONFIG['UNKNOWN']
   const qty = entry.quantity || 1
 
@@ -81,6 +87,49 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, isHighlighte
   const handleRate = async (rating) => {
     setRatingMode(false)
     await onMarkDrunk(entry, rating)
+  }
+
+  const handleReanalyzeImage = (file) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (e) => setExtraImages(prev => [...prev, e.target.result])
+    reader.readAsDataURL(file)
+  }
+
+  const runReanalyze = async () => {
+    setReanalyzing(true); setReanalyzeError(null)
+    try {
+      const images = []
+      // Include original image if present
+      if (entry.imageData) {
+        const resized = await resizeImageData(entry.imageData)
+        images.push(resized.split(',')[1])
+      }
+      // Add new images
+      for (const img of extraImages) {
+        const resized = await resizeImageData(img)
+        images.push(resized.split(',')[1])
+      }
+      const res = await fetch(window.location.origin + '/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images,
+          clarificationText: extraText.trim() || null,
+        }),
+      })
+      const parsed = await res.json()
+      if (parsed.error) {
+        setReanalyzeError(parsed.error)
+      } else {
+        // Merge new analysis into entry, preserve quantity/id/imageData/scannedAt
+        await onReanalyze(entry.id, parsed)
+        setReanalyzeMode(false)
+        setExtraImages([])
+        setExtraText('')
+      }
+    } catch (e) { setReanalyzeError('Request failed: ' + e.message) }
+    setReanalyzing(false)
   }
 
   return (
@@ -215,19 +264,92 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, isHighlighte
           {entry.confidence && <Row label="ID Confidence" value={entry.confidence} />}
           <Row label="Scanned" value={new Date(entry.scannedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} />
 
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
             <button onClick={(e) => { e.stopPropagation(); setRatingMode(true) }} style={{
               flex: 2, padding: '8px 12px',
               background: 'linear-gradient(135deg, #1a3d1a, #2d6a2d)',
               color: '#d8f3d8', border: 'none', borderRadius: '6px',
               fontSize: '12px', cursor: 'pointer', fontFamily: 'Georgia, serif', fontWeight: '600',
             }}>🍷 I drank one</button>
+            <button onClick={(e) => { e.stopPropagation(); setReanalyzeMode(r => !r); setReanalyzeError(null) }} style={{
+              flex: 1, background: reanalyzeMode ? '#f0e8de' : 'none',
+              border: '1px solid #c8b09a', borderRadius: '6px', padding: '8px 10px',
+              fontSize: '12px', cursor: 'pointer', fontFamily: 'Georgia, serif', color: '#6b3a2a',
+            }}>🔄 Re-analyze</button>
             <button onClick={(e) => { e.stopPropagation(); onDelete(entry.id) }} style={{
               flex: 1, background: 'none', border: '1px solid #e0c8b8',
-              color: '#b05030', borderRadius: '6px', padding: '8px 12px',
+              color: '#b05030', borderRadius: '6px', padding: '8px 10px',
               fontSize: '12px', cursor: 'pointer', fontFamily: 'Georgia, serif',
-            }}>Remove all</button>
+            }}>Remove</button>
           </div>
+
+          {/* Re-analyze panel */}
+          {reanalyzeMode && (
+            <div style={{ marginTop: '14px', padding: '14px', background: '#f7f2eb', borderRadius: '10px', border: '1px solid #e0d0c0' }}>
+              <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: '14px', fontWeight: '700', color: '#2c1810', marginBottom: '6px' }}>
+                Re-analyze this wine
+              </div>
+              <div style={{ fontSize: '12px', color: '#7a6055', fontFamily: 'Georgia, serif', marginBottom: '12px', lineHeight: 1.5 }}>
+                Add a clearer photo or back label, or type any additional information (vintage, region, importer) to improve the identification.
+              </div>
+
+              {/* Thumbnail strip of added images */}
+              {extraImages.length > 0 && (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  {extraImages.map((img, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <img src={img} alt={`extra ${i+1}`} style={{ width: '56px', height: '74px', objectFit: 'cover', borderRadius: '6px', border: '2px solid #c8b09a' }} />
+                      <button onClick={() => setExtraImages(prev => prev.filter((_, j) => j !== i))} style={{
+                        position: 'absolute', top: '-6px', right: '-6px', width: '18px', height: '18px',
+                        borderRadius: '50%', background: '#8b2500', color: '#fff', border: 'none',
+                        fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700',
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button onClick={() => reanalyzeFileRef.current?.click()} style={{
+                width: '100%', padding: '9px', background: 'none',
+                border: '2px dashed #c8b09a', borderRadius: '8px',
+                color: '#6b3a2a', fontSize: '12px', cursor: 'pointer',
+                fontFamily: 'Georgia, serif', marginBottom: '10px',
+              }}>
+                📷 Add photo{extraImages.length > 0 ? ` (${extraImages.length} added)` : ''}
+              </button>
+              <input type="file" accept="image/*" capture="environment" ref={reanalyzeFileRef}
+                style={{ display: 'none' }} onChange={e => handleReanalyzeImage(e.target.files[0])} />
+
+              <textarea
+                placeholder="Additional context: vintage, region, importer, what you can read on the label…"
+                value={extraText} onChange={e => setExtraText(e.target.value)} rows={2}
+                style={{
+                  width: '100%', padding: '9px 12px', border: '1px solid #c8b09a', borderRadius: '8px',
+                  fontSize: '16px', fontFamily: 'Georgia, serif', color: '#2c1810',
+                  background: '#fff', resize: 'none', outline: 'none', marginBottom: '10px',
+                }}
+              />
+
+              {reanalyzeError && (
+                <div style={{ background: '#fff5f0', border: '1px solid #f0c8b8', borderRadius: '8px', padding: '8px 12px', color: '#8b2500', fontSize: '12px', fontFamily: 'Georgia, serif', marginBottom: '10px' }}>
+                  ⚠️ {reanalyzeError}
+                </div>
+              )}
+
+              <button onClick={(e) => { e.stopPropagation(); runReanalyze() }}
+                disabled={reanalyzing || (extraImages.length === 0 && !extraText.trim() && !entry.imageData)}
+                style={{
+                  width: '100%', padding: '10px',
+                  background: reanalyzing ? '#c0a090' : 'linear-gradient(135deg, #6b1a0e, #8b2500)',
+                  color: '#f5e6cc', border: 'none', borderRadius: '8px',
+                  fontSize: '13px', fontFamily: "'Playfair Display', Georgia, serif",
+                  fontWeight: '700', cursor: reanalyzing ? 'not-allowed' : 'pointer',
+                  letterSpacing: '0.03em',
+                }}>
+                {reanalyzing ? 'Re-analyzing…' : 'Update This Entry'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -498,6 +620,25 @@ function TonightView({ entries, history, preference, setPreference, foodPairing,
 }
 
 // ── Image resize ──────────────────────────────────────────────────────────────
+function resizeImageData(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const MAX = 1568
+      let { width, height } = img
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+        else { width = Math.round(width * MAX / height); height = MAX }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width; canvas.height = height
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+    img.src = dataUrl
+  })
+}
+
 function resizeImage(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image()
@@ -640,6 +781,29 @@ export default function WineCellar() {
   const handleQuantityChange = async (id, newQty) => {
     if (newQty < 1) return
     const updated = entries.map(e => e.id === id ? { ...e, quantity: newQty } : e)
+    await persistAndSet(updated)
+  }
+
+  const handleReanalyze = async (id, newAnalysis) => {
+    const updated = entries.map(e => e.id === id
+      ? {
+          ...e,
+          // Update all analysis fields but preserve cellar metadata
+          name: newAnalysis.name ?? e.name,
+          vintage: newAnalysis.vintage ?? e.vintage,
+          producer: newAnalysis.producer ?? e.producer,
+          region: newAnalysis.region ?? e.region,
+          varietal: newAnalysis.varietal ?? e.varietal,
+          estimatedValue: newAnalysis.estimatedValue ?? e.estimatedValue,
+          drinkingWindow: newAnalysis.drinkingWindow ?? e.drinkingWindow,
+          verdict: newAnalysis.verdict ?? e.verdict,
+          verdictReason: newAnalysis.verdictReason ?? e.verdictReason,
+          characteristics: newAnalysis.characteristics ?? e.characteristics,
+          confidence: newAnalysis.confidence ?? e.confidence,
+          reanalyzedAt: new Date().toISOString(),
+        }
+      : e
+    )
     await persistAndSet(updated)
   }
 
@@ -890,6 +1054,7 @@ export default function WineCellar() {
                     <WineCard key={entry.id} entry={entry}
                       onDelete={deleteEntry} onMarkDrunk={markAsDrunk}
                       onQuantityChange={handleQuantityChange}
+                      onReanalyze={handleReanalyze}
                       isHighlighted={activeEntryId === entry.id}
                     />
                   ))
