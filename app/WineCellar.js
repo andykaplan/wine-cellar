@@ -824,6 +824,7 @@ export default function WineCellar() {
           // Check for duplicate before showing result
           const dup = findDuplicate(parsed)
           if (dup) { setPendingResult(parsed); setDuplicateEntry(dup) }
+          else { setResult(parsed) }
         }
       }
     } catch (e) { setError('Request failed: ' + e.message) }
