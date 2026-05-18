@@ -19,11 +19,19 @@ Return this exact structure:
   "clarificationQuestions": []
 }
 
-IMPORTANT: if confidence is LOW, set clarificationNeeded to true and populate clarificationQuestions with 2-4 specific, actionable questions or photo requests that would help identify the wine better. Examples:
-- "Can you photograph the back label? It may show the appellation or importer."
-- "What year did you purchase or receive this bottle?"
-- "Is there any text visible on the capsule or cork?"
+IMPORTANT — set clarificationNeeded to true and populate clarificationQuestions when ANY of these are true:
+1. confidence is LOW
+2. vintage is unknown or missing (use "Unknown" for vintage field) — a vintage is critical for drinking window advice
+3. You cannot identify the region or producer with reasonable confidence
+
+Clarification questions should be specific and actionable (2-4 questions). Examples:
+- "Can you photograph the back label? It may show the vintage year and appellation."
+- "What year did you purchase or receive this bottle? Even an approximate year helps."
+- "Is there a year printed anywhere on the capsule, cork, or back label?"
 - "Can you retake the photo in better lighting showing the full label?"
+- "Is there any text on the back label showing the importer or region?"
+
+Once the user provides additional information and confidence reaches MEDIUM or HIGH, set clarificationNeeded to false even if some details are still uncertain.
 
 Use verdict PROBABLY UNDRINKABLE when: the wine is a simple table wine well past 10-15 years old, a cheap wine over 20 years old, or any wine where age and type strongly suggest it has deteriorated beyond enjoyment.
 

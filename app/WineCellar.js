@@ -719,6 +719,7 @@ export default function WineCellar() {
   const [storageReady, setStorageReady]   = useState(false)
   const [activeEntryId, setActiveEntryId] = useState(null)
   const [search, setSearch]               = useState('')
+  const [cellarSort, setCellarSort]         = useState('scanned')
   const [preference, setPreference]       = useState('')
   const [foodPairing, setFoodPairing]     = useState('')
   const [reco, setReco]                   = useState(null)
@@ -804,12 +805,26 @@ export default function WineCellar() {
       })
       const parsed = await res.json()
       if (parsed.error) { setError(parsed.error); setClarifying(false) }
-      else if (parsed.confidence === 'LOW' && parsed.clarificationNeeded && !withExtras) { setResult(parsed); setClarifying(true) }
       else {
-        // Check for duplicate before showing result
-        const dup = findDuplicate(parsed)
-        if (dup) { setPendingResult(parsed); setDuplicateEntry(dup) }
-        else { setResult(parsed) }
+        // Enter clarification mode only when:
+        // - This is the FIRST analysis (not a re-analysis with extras)
+        // - Confidence is still LOW
+        // - The model is explicitly asking for clarification
+        // Once user provides extras, always exit clarification even if still LOW
+        // (avoids infinite loop). Also exits if confidence improves to MEDIUM/HIGH.
+        const needsClarification =
+          !withExtras &&
+          parsed.confidence === 'LOW' &&
+          parsed.clarificationNeeded === true
+
+        if (needsClarification) {
+          setResult(parsed); setClarifying(true)
+        } else {
+          setClarifying(false)
+          // Check for duplicate before showing result
+          const dup = findDuplicate(parsed)
+          if (dup) { setPendingResult(parsed); setDuplicateEntry(dup) }
+        }
       }
     } catch (e) { setError('Request failed: ' + e.message) }
     setLoading(false)
@@ -926,10 +941,24 @@ export default function WineCellar() {
     setPendingResult(null); setDuplicateEntry(null)
   }
 
-  const filtered = entries.filter(e => {
-    const q = search.toLowerCase()
-    return !q || [e.name, e.producer, e.region, e.varietal, e.vintage, e.verdict, e.characteristics].some(f => f?.toLowerCase().includes(q))
-  })
+  // Parse drinking window into a sortable year — take the first 4-digit year found
+  const drinkingSortKey = (e) => {
+    if (!e.drinkingWindow) return 9999
+    const m = e.drinkingWindow.match(/\d{4}/)
+    return m ? parseInt(m[0]) : 9999
+  }
+
+  const filtered = entries
+    .filter(e => {
+      const q = search.toLowerCase()
+      return !q || [e.name, e.producer, e.region, e.varietal, e.vintage, e.verdict, e.characteristics].some(f => f?.toLowerCase().includes(q))
+    })
+    .sort((a, b) => {
+      if (cellarSort === 'name')    return (a.name || '').localeCompare(b.name || '')
+      if (cellarSort === 'drink')   return drinkingSortKey(a) - drinkingSortKey(b)
+      // default: scanned — newest first
+      return new Date(b.scannedAt || 0) - new Date(a.scannedAt || 0)
+    })
 
   const verdict = result ? (VERDICT_CONFIG[result.verdict] || VERDICT_CONFIG['UNKNOWN']) : null
 
@@ -1163,6 +1192,20 @@ export default function WineCellar() {
                   value={search} onChange={e => setSearch(e.target.value)}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1px solid #ddd4c8', background: '#fff', fontSize: '16px', color: '#2c1810', marginBottom: '6px', outline: 'none' }}
                 />
+                {/* Sort controls */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                  {[['scanned', 'Recent'], ['name', 'Name'], ['drink', 'Drink by']].map(([val, label]) => (
+                    <button key={val} onClick={() => setCellarSort(val)} style={{
+                      flex: 1, padding: '6px 4px', borderRadius: '8px', cursor: 'pointer',
+                      fontFamily: 'Georgia, serif', fontSize: '12px',
+                      fontWeight: cellarSort === val ? '700' : '400',
+                      background: cellarSort === val ? '#2c1810' : 'none',
+                      color: cellarSort === val ? '#f5e6cc' : '#7a6055',
+                      border: cellarSort === val ? 'none' : '1px solid #ddd4c8',
+                    }}>{label}</button>
+                  ))}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                   <div style={{ fontSize: '12px', color: '#9a7060', fontFamily: 'Georgia, serif' }}>
                     {filtered.length} of {entries.length} wine{entries.length !== 1 ? 's' : ''} · {entries.reduce((s, e) => s + (e.quantity || 1), 0)} bottle{entries.reduce((s, e) => s + (e.quantity || 1), 0) !== 1 ? 's' : ''}
