@@ -6,13 +6,18 @@ import { useState, useEffect, useRef } from 'react'
 
 // Image helpers — each label photo stored as its own Blob
 async function uploadImage(id, imageData) {
-  try {
-    await fetch(window.location.origin + '/api/image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, imageData }),
-    })
-  } catch (_) {}
+  const res = await fetch(window.location.origin + '/api/image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, imageData }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Image upload failed (HTTP ${res.status})`)
+  }
+  const data = await res.json()
+  if (!data.ok) throw new Error(data.error || 'Image upload failed')
+  return data.url
 }
 
 async function fetchImageUrl(id) {
@@ -38,15 +43,19 @@ async function loadEntries() {
 }
 
 async function saveEntries(entries) {
-  try {
-    // Strip imageData — images stored separately via /api/image
-    const stripped = entries.map(({ imageData, ...rest }) => rest)
-    await fetch(window.location.origin + '/api/cellar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(stripped),
-    })
-  } catch (_) {}
+  const stripped = entries.map(({ imageData, ...rest }) => rest)
+  const res = await fetch(window.location.origin + '/api/cellar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stripped),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Failed to save cellar (HTTP ${res.status})`)
+  }
+  const data = await res.json()
+  if (data.error) throw new Error(data.error)
+  return data
 }
 
 async function loadHistory() {
@@ -715,6 +724,8 @@ export default function WineCellar() {
   const [reco, setReco]                   = useState(null)
   const [recoLoading, setRecoLoading]     = useState(false)
   const [recoError, setRecoError]         = useState(null)
+  const [saveError, setSaveError]         = useState(null)
+  const [saving, setSaving]               = useState(false)
   // duplicate detection
   const [pendingResult, setPendingResult] = useState(null)
   const [duplicateEntry, setDuplicateEntry] = useState(null)
@@ -734,7 +745,19 @@ export default function WineCellar() {
     })
   }, [])
 
-  const persistAndSet = async (updated) => { setEntries(updated); await saveEntries(updated) }
+  const persistAndSet = async (updated) => {
+    setEntries(updated)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await saveEntries(updated)
+    } catch (err) {
+      setSaveError(err.message)
+      console.error('Save failed:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleImage = (file) => {
     if (!file) return
@@ -795,13 +818,23 @@ export default function WineCellar() {
   const addToCellar = async () => {
     if (!result) return
     const id = Date.now().toString()
-    // Upload image to Blob separately, store URL in entry
-    if (imageData) await uploadImage(id, imageData)
-    const imgUrl = imageData ? await fetchImageUrl(id) : null
-    const entry = { ...result, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
-    await persistAndSet([entry, ...entries])
-    setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
-    setView('cellar')
+    setSaveError(null)
+    setSaving(true)
+    try {
+      // Upload image first — fail loudly if this doesn't work
+      let imgUrl = null
+      if (imageData) {
+        imgUrl = await uploadImage(id, imageData)
+      }
+      const entry = { ...result, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
+      await persistAndSet([entry, ...entries])
+      setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
+      setView('cellar')
+    } catch (err) {
+      setSaveError('Failed to add bottle: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const incrementDuplicate = async () => {
@@ -926,6 +959,35 @@ export default function WineCellar() {
           </button>
         ))}
       </div>
+
+      {/* Save error banner — shown across all tabs */}
+      {saveError && (
+        <div style={{
+          background: '#7a1a1a', color: '#fff',
+          padding: '10px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+        }}>
+          <div style={{ fontSize: '13px', fontFamily: 'Georgia, serif', lineHeight: 1.4, flex: 1 }}>
+            ⚠️ <strong>Save failed:</strong> {saveError}. Your change was NOT saved to the cloud.
+          </div>
+          <button onClick={() => setSaveError(null)} style={{
+            background: 'none', border: '1px solid rgba(255,255,255,0.4)', borderRadius: '6px',
+            color: '#fff', padding: '4px 10px', fontSize: '12px', cursor: 'pointer',
+            fontFamily: 'Georgia, serif', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>Dismiss</button>
+        </div>
+      )}
+
+      {/* Saving indicator */}
+      {saving && !saveError && (
+        <div style={{
+          background: '#2d6a2d', color: '#d8f3d8',
+          padding: '6px 16px', fontSize: '12px', fontFamily: 'Georgia, serif',
+          textAlign: 'center',
+        }}>
+          Saving…
+        </div>
+      )}
 
       <div style={{ padding: '20px 16px' }}>
 
@@ -1060,8 +1122,8 @@ export default function WineCellar() {
                     <div style={{ ...valueStyle, fontStyle: 'italic', lineHeight: 1.7, background: '#fdfaf7', padding: '10px 12px', borderRadius: '8px', border: '1px solid #f0e8de', marginTop: '2px' }}>{result.characteristics}</div>
                   </div>
                   {result.confidence && <Row label="Identification Confidence" value={result.confidence} />}
-                  <button onClick={addToCellar} style={{ width: '100%', padding: '13px', background: 'linear-gradient(135deg, #1a3d1a, #2d6a2d)', color: '#d8f3d8', border: 'none', borderRadius: '10px', fontSize: '14px', fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', cursor: 'pointer', letterSpacing: '0.04em', marginTop: '4px' }}>
-                    + Add to My Cellar
+                  <button onClick={addToCellar} disabled={saving} style={{ width: '100%', padding: '13px', background: saving ? '#c0a090' : 'linear-gradient(135deg, #1a3d1a, #2d6a2d)', color: '#d8f3d8', border: 'none', borderRadius: '10px', fontSize: '14px', fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer', letterSpacing: '0.04em', marginTop: '4px' }}>
+                    {saving ? 'Saving…' : '+ Add to My Cellar'}
                   </button>
                 </div>
               </div>
