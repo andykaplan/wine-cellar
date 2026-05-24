@@ -26,8 +26,9 @@ export async function POST(request) {
     const { id, imageData } = await request.json()
     if (!id || !imageData) return Response.json({ error: 'Missing id or imageData' }, { status: 400 })
 
-    // Convert base64 data URL to binary
-    const base64 = imageData.split(',')[1]
+    // Convert base64 data URL to binary — handle both 'data:...;base64,XXX' and raw base64
+    const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData
+    if (!base64) return Response.json({ error: 'Invalid image data' }, { status: 400 })
     const binary = Buffer.from(base64, 'base64')
     const blob = new Blob([binary], { type: 'image/jpeg' })
 

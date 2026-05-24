@@ -41,15 +41,16 @@ export async function POST(request) {
   try {
     const { images, clarificationText } = await request.json()
 
-    if (!images || images.length === 0) {
-      return Response.json({ error: 'No image provided' }, { status: 400 })
+    // Require at least an image OR clarification text (text-only re-analysis is valid)
+    if ((!images || images.length === 0) && !clarificationText) {
+      return Response.json({ error: 'No image or text provided' }, { status: 400 })
     }
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const content = []
 
-    for (const img of images) {
+    for (const img of (images || [])) {
       content.push({
         type: 'image',
         source: {

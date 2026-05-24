@@ -67,13 +67,15 @@ async function loadHistory() {
 }
 
 async function saveHistoryEntry(entry) {
-  try {
-    await fetch(window.location.origin + '/api/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(entry),
-    })
-  } catch (_) {}
+  const res = await fetch(window.location.origin + '/api/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Failed to save history (HTTP ${res.status})`)
+  }
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -134,32 +136,39 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, onReanalyze,
   }
 
   const runReanalyze = async () => {
+    if (extraImages.length === 0 && !extraText.trim()) {
+      setReanalyzeError('Please add a photo or some text before re-analyzing.')
+      return
+    }
     setReanalyzing(true); setReanalyzeError(null)
     try {
       const images = []
-      // Include original image if present
-      if (entry.imageData) {
-        const resized = await resizeImageData(entry.imageData)
-        images.push(resized.split(',')[1])
-      }
-      // Add new images
+      // Only process NEW images added by the user — the original image is
+      // already stored as a URL in Blob and can't be re-processed via canvas
+      // (CORS restriction). New images are base64 from the file picker.
       for (const img of extraImages) {
         const resized = await resizeImageData(img)
         images.push(resized.split(',')[1])
       }
+
+      // If no new photos but we have text context, still proceed
+      // (the API will use the text + any existing entry context)
+      const contextNote = entry.imageData
+        ? `This is a re-analysis of: ${entry.name || 'unknown wine'}, ${entry.vintage || 'unknown vintage'}, ${entry.region || ''}.`
+        : null
+
       const res = await fetch(window.location.origin + '/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           images,
-          clarificationText: extraText.trim() || null,
+          clarificationText: [contextNote, extraText.trim()].filter(Boolean).join(' ') || null,
         }),
       })
       const parsed = await res.json()
       if (parsed.error) {
         setReanalyzeError(parsed.error)
       } else {
-        // Merge new analysis into entry, preserve quantity/id/imageData/scannedAt
         await onReanalyze(entry.id, parsed)
         setReanalyzeMode(false)
         setExtraImages([])
@@ -327,7 +336,7 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, onReanalyze,
                 Re-analyze this wine
               </div>
               <div style={{ fontSize: '12px', color: '#7a6055', fontFamily: 'Georgia, serif', marginBottom: '12px', lineHeight: 1.5 }}>
-                Add a clearer photo or back label, or type any additional information (vintage, region, importer) to improve the identification.
+                Add a new photo (back label, clearer shot) or type additional information (vintage year, region, importer). A photo or text is required.
               </div>
 
               {/* Thumbnail strip of added images */}
@@ -812,10 +821,28 @@ export default function WineCellar() {
         // - The model is explicitly asking for clarification
         // Once user provides extras, always exit clarification even if still LOW
         // (avoids infinite loop). Also exits if confidence improves to MEDIUM/HIGH.
+        const vintageUnknown = !parsed.vintage ||
+          parsed.vintage === 'Unknown' ||
+          parsed.vintage === 'unknown' ||
+          (parsed.vintage === 'NV' && parsed.confidence === 'LOW')
+
         const needsClarification =
-          !withExtras &&
-          parsed.confidence === 'LOW' &&
-          parsed.clarificationNeeded === true
+          !withExtras && (
+            (parsed.confidence === 'LOW' && parsed.clarificationNeeded === true) ||
+            vintageUnknown
+          )
+
+        // Add a vintage question if not already in clarification questions
+        if (needsClarification && vintageUnknown && parsed.clarificationQuestions) {
+          const hasVintageQ = parsed.clarificationQuestions.some(q =>
+            q.toLowerCase().includes('year') || q.toLowerCase().includes('vintage')
+          )
+          if (!hasVintageQ) {
+            parsed.clarificationQuestions.unshift(
+              'What year is this wine? Check the front label, back label, or capsule for a 4-digit year.'
+            )
+          }
+        }
 
         if (needsClarification) {
           setResult(parsed); setClarifying(true)
@@ -843,7 +870,9 @@ export default function WineCellar() {
         imgUrl = await uploadImage(id, imageData)
       }
       const entry = { ...result, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
-      await persistAndSet([entry, ...entries])
+      // Call saveEntries directly to avoid double-managing saving state with persistAndSet
+      setEntries(prev => [entry, ...prev])
+      await saveEntries([entry, ...entries])
       setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
       setView('cellar')
     } catch (err) {
@@ -855,10 +884,16 @@ export default function WineCellar() {
 
   const incrementDuplicate = async () => {
     if (!duplicateEntry) return
+    setSaveError(null)
     let imgUrl = duplicateEntry.imageData
-    if (imageData) {
-      await uploadImage(duplicateEntry.id, imageData)
-      imgUrl = await fetchImageUrl(duplicateEntry.id)
+    try {
+      if (imageData) {
+        // uploadImage returns the URL directly — no need for a second fetch
+        imgUrl = await uploadImage(duplicateEntry.id, imageData)
+      }
+    } catch (err) {
+      // Image upload failure is non-fatal for quantity increment
+      console.error('Image upload failed during increment:', err)
     }
     const updated = entries.map(e =>
       e.id === duplicateEntry.id ? { ...e, quantity: (e.quantity || 1) + 1, imageData: imgUrl } : e
@@ -871,11 +906,25 @@ export default function WineCellar() {
 
   const addAsNewEntry = async () => {
     if (!pendingResult) return
-    const entry = { ...pendingResult, quantity: 1, id: Date.now().toString(), imageData, scannedAt: new Date().toISOString() }
-    await persistAndSet([entry, ...entries])
-    setPendingResult(null); setDuplicateEntry(null)
-    setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
-    setView('cellar')
+    const id = Date.now().toString()
+    setSaveError(null)
+    setSaving(true)
+    try {
+      let imgUrl = null
+      if (imageData) {
+        imgUrl = await uploadImage(id, imageData)
+      }
+      const entry = { ...pendingResult, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
+      setEntries(prev => [entry, ...prev])
+      await saveEntries([entry, ...entries])
+      setPendingResult(null); setDuplicateEntry(null)
+      setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
+      setView('cellar')
+    } catch (err) {
+      setSaveError('Failed to add bottle: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const deleteEntry = async (id) => {
@@ -890,22 +939,25 @@ export default function WineCellar() {
   }
 
   const handleReanalyze = async (id, newAnalysis) => {
+    // Helper: only use new value if it's a non-empty string, otherwise keep existing
+    const keep = (newVal, oldVal) => (newVal && typeof newVal === 'string' && newVal.trim()) ? newVal : oldVal
     const updated = entries.map(e => e.id === id
       ? {
           ...e,
-          // Update all analysis fields but preserve cellar metadata
-          name: newAnalysis.name ?? e.name,
-          vintage: newAnalysis.vintage ?? e.vintage,
-          producer: newAnalysis.producer ?? e.producer,
-          region: newAnalysis.region ?? e.region,
-          varietal: newAnalysis.varietal ?? e.varietal,
-          estimatedValue: newAnalysis.estimatedValue ?? e.estimatedValue,
-          drinkingWindow: newAnalysis.drinkingWindow ?? e.drinkingWindow,
-          verdict: newAnalysis.verdict ?? e.verdict,
-          verdictReason: newAnalysis.verdictReason ?? e.verdictReason,
-          characteristics: newAnalysis.characteristics ?? e.characteristics,
-          confidence: newAnalysis.confidence ?? e.confidence,
-          reanalyzedAt: new Date().toISOString(),
+          // Preserve ALL cellar metadata (id, quantity, imageData, scannedAt)
+          // Only update analysis fields if the new value is non-empty
+          name:           keep(newAnalysis.name,           e.name),
+          vintage:        keep(newAnalysis.vintage,        e.vintage),
+          producer:       keep(newAnalysis.producer,       e.producer),
+          region:         keep(newAnalysis.region,         e.region),
+          varietal:       keep(newAnalysis.varietal,       e.varietal),
+          estimatedValue: keep(newAnalysis.estimatedValue, e.estimatedValue),
+          drinkingWindow: keep(newAnalysis.drinkingWindow, e.drinkingWindow),
+          verdict:        keep(newAnalysis.verdict,        e.verdict),
+          verdictReason:  keep(newAnalysis.verdictReason,  e.verdictReason),
+          characteristics:keep(newAnalysis.characteristics,e.characteristics),
+          confidence:     keep(newAnalysis.confidence,     e.confidence),
+          reanalyzedAt:   new Date().toISOString(),
         }
       : e
     )
@@ -921,7 +973,12 @@ export default function WineCellar() {
       characteristics: entry.characteristics, rating,
       drunkOn: new Date().toISOString(),
     }
-    await saveHistoryEntry(histEntry)
+    try {
+      await saveHistoryEntry(histEntry)
+    } catch (err) {
+      setSaveError('Failed to save tasting record: ' + err.message)
+      return // Don't remove from cellar if history save failed
+    }
     setHistory(prev => [histEntry, ...prev])
     const newQty = (entry.quantity || 1) - 1
     if (newQty <= 0) {

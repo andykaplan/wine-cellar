@@ -6,7 +6,7 @@ You will receive:
 - Their wine collection as JSON
 - Their preference (red, white, or no preference)
 - Optionally, a food pairing they have in mind
-- Their drinking history with ratings (1-10) — use this to understand their taste preferences
+- Their drinking history with ratings, IF they have rated any wines — only use this if it is explicitly provided
 
 Your job is to recommend exactly 2 wines from the collection — a first choice and a second choice.
 
@@ -16,7 +16,7 @@ PRIORITIZATION RULES (in order of importance):
 3. Wines with verdict PEAK SOON or DRINK NOW should be prioritized next
 4. Wines with verdict HOLD should only be recommended if nothing better is available
 5. If a food pairing is specified, factor in how well the wine matches the food
-6. Use the drinking history ratings to understand preferences — if they rated similar wines highly, favor those styles; if they rated wines poorly, avoid similar styles
+6. ONLY if a drinking history section is explicitly provided below: use those ratings to understand preferences. Do NOT invent or assume any ratings or preferences if no history is provided.
 7. Within the same priority tier, prefer wines whose drinking window is ending soonest
 
 Respond ONLY with valid JSON — no markdown, no backticks, no text outside the JSON.
@@ -58,8 +58,16 @@ export async function POST(request) {
 
     let historySection = ''
     if (history && history.length > 0) {
-      const recentHistory = history.slice(0, 20) // cap at 20 entries
-      historySection = `\nMy drinking history (most recent first):\n${JSON.stringify(recentHistory, null, 2)}`
+      // Only include valid history entries that have a real rating (1-10)
+      // Guards against corrupt data or old blob files being misread as history
+      const validHistory = history.filter(e =>
+        e.rating && typeof e.rating === 'number' && e.rating >= 1 && e.rating <= 10 &&
+        e.drunkOn && e.name
+      )
+      if (validHistory.length > 0) {
+        const recentHistory = validHistory.slice(0, 20)
+        historySection = `\nMy drinking history with ratings (most recent first):\n${JSON.stringify(recentHistory, null, 2)}`
+      }
     }
 
     const userMessage = `
@@ -68,7 +76,7 @@ ${JSON.stringify(cellarForAPI, null, 2)}
 
 My preference for tonight: ${preference || 'No preference — red or white is fine'}
 ${foodPairing ? `Food pairing: ${foodPairing}` : 'No specific food pairing in mind'}
-${historySection}
+${historySection || 'Drinking history: none yet — I have not rated any wines, do not infer or assume any preferences.'}
 
 Please recommend the best 2 wines for me to drink tonight.`
 
