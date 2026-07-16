@@ -117,6 +117,7 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, onReanalyze,
   const [extraText, setExtraText] = useState('')
   const [reanalyzing, setReanalyzing] = useState(false)
   const [reanalyzeError, setReanalyzeError] = useState(null)
+  const [lightbox, setLightbox] = useState(false)
   const reanalyzeFileRef = useRef()
   const verdict = VERDICT_CONFIG[entry.verdict] || VERDICT_CONFIG['UNKNOWN']
   const qty = entry.quantity || 1
@@ -191,10 +192,16 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, onReanalyze,
         display: 'flex', alignItems: 'flex-start', gap: '12px',
       }}>
         {entry.imageData && (
-          <img src={entry.imageData} alt="label" style={{
-            width: '44px', height: '60px', objectFit: 'cover',
-            borderRadius: '6px', border: '1px solid #e0d4c4', flexShrink: 0,
-          }} />
+          <img
+            src={entry.imageData}
+            alt="label"
+            onClick={e => { e.stopPropagation(); setLightbox(true) }}
+            style={{
+              width: '44px', height: '60px', objectFit: 'cover',
+              borderRadius: '6px', border: '1px solid #e0d4c4', flexShrink: 0,
+              cursor: 'zoom-in',
+            }}
+          />
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
@@ -234,6 +241,43 @@ function WineCard({ entry, onDelete, onMarkDrunk, onQuantityChange, onReanalyze,
           )}
         </div>
       </div>
+
+      {/* Lightbox — rendered at card root level, outside flex row, for reliable iOS fixed positioning */}
+      {lightbox && entry.imageData && (
+        <div
+          onClick={e => { e.stopPropagation(); setLightbox(false) }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,0.88)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <img
+            src={entry.imageData}
+            alt="label full size"
+            style={{
+              maxWidth: '100%', maxHeight: '80vh',
+              objectFit: 'contain', borderRadius: '8px',
+              boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
+            }}
+          />
+          <div style={{
+            marginTop: '16px',
+            fontFamily: "'Playfair Display', Georgia, serif",
+            fontSize: '14px', color: 'rgba(245,230,200,0.7)',
+          }}>
+            {entry.name} {entry.vintage}
+          </div>
+          <div style={{
+            marginTop: '8px', fontSize: '12px',
+            color: 'rgba(255,255,255,0.4)', fontFamily: 'Georgia, serif',
+          }}>
+            Tap anywhere to close
+          </div>
+        </div>
+      )}
 
       {/* Rating mode */}
       {ratingMode && (
@@ -870,9 +914,10 @@ export default function WineCellar() {
         imgUrl = await uploadImage(id, imageData)
       }
       const entry = { ...result, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
-      // Call saveEntries directly to avoid double-managing saving state with persistAndSet
-      setEntries(prev => [entry, ...prev])
-      await saveEntries([entry, ...entries])
+      // Build new list once — use same reference for both state and save
+      const newEntries = [entry, ...entries]
+      setEntries(newEntries)
+      await saveEntries(newEntries)
       setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
       setView('cellar')
     } catch (err) {
@@ -915,8 +960,9 @@ export default function WineCellar() {
         imgUrl = await uploadImage(id, imageData)
       }
       const entry = { ...pendingResult, quantity: 1, id, imageData: imgUrl, scannedAt: new Date().toISOString() }
-      setEntries(prev => [entry, ...prev])
-      await saveEntries([entry, ...entries])
+      const newEntries = [entry, ...entries]
+      setEntries(newEntries)
+      await saveEntries(newEntries)
       setPendingResult(null); setDuplicateEntry(null)
       setResult(null); setImageData(null); setExtraImages([]); setClarifyText(''); setClarifying(false)
       setView('cellar')
@@ -1014,6 +1060,11 @@ export default function WineCellar() {
     .sort((a, b) => {
       if (cellarSort === 'name')    return (a.name || '').localeCompare(b.name || '')
       if (cellarSort === 'drink')   return drinkingSortKey(a) - drinkingSortKey(b)
+      if (cellarSort === 'vintage') {
+        const va = parseInt(a.vintage) || 9999
+        const vb = parseInt(b.vintage) || 9999
+        return va - vb  // oldest vintage first
+      }
       // default: scanned — newest first
       return new Date(b.scannedAt || 0) - new Date(a.scannedAt || 0)
     })
@@ -1252,7 +1303,7 @@ export default function WineCellar() {
                 />
                 {/* Sort controls */}
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-                  {[['scanned', 'Recent'], ['name', 'Name'], ['drink', 'Drink by']].map(([val, label]) => (
+                  {[['scanned', 'Recent'], ['name', 'Name'], ['vintage', 'Vintage'], ['drink', 'Drink by']].map(([val, label]) => (
                     <button key={val} onClick={() => setCellarSort(val)} style={{
                       flex: 1, padding: '6px 4px', borderRadius: '8px', cursor: 'pointer',
                       fontFamily: 'Georgia, serif', fontSize: '12px',
