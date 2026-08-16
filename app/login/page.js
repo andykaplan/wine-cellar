@@ -3,33 +3,16 @@
 import { useState } from 'react'
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState(null)
-  const [loading, setLoading]   = useState(false)
+  const [error, setError] = useState(
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('error')
+      : null
+  )
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true); setError(null)
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        credentials: 'same-origin',
-      })
-      if (res.ok) {
-        const params = new URLSearchParams(window.location.search)
-        window.location.href = params.get('from') || '/'
-      } else {
-        const data = await res.json()
-        setError(data.error || 'Invalid credentials')
-      }
-    } catch (_) {
-      setError('Network error — please try again')
-    }
-    setLoading(false)
-  }
+  // Get the ?from= param for the hidden field
+  const from = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('from') || '/'
+    : '/'
 
   return (
     <div style={{
@@ -48,7 +31,7 @@ export default function LoginPage() {
       </div>
 
       <div style={{ fontSize: '13px', color: '#9a7060', marginBottom: '32px' }}>
-        Sign in to your cellar
+        Your Personal Wine Journal
       </div>
 
       <div style={{
@@ -60,26 +43,30 @@ export default function LoginPage() {
         maxWidth: '340px',
         boxShadow: '0 4px 16px rgba(80,20,10,0.08)',
       }}>
-        <form onSubmit={handleSubmit}>
+        <div style={{
+          fontSize: '18px', fontWeight: 'bold', color: '#2c1810',
+          marginBottom: '20px', textAlign: 'center',
+        }}>
+          Sign in to your cellar
+        </div>
+
+        {/* Native form POST — server sets cookie before any redirect */}
+        <form method="POST" action="/api/login">
+          <input type="hidden" name="from" value={from} />
+
           <div style={{ marginBottom: '14px' }}>
             <div style={{ fontSize: '12px', color: '#9a7060', marginBottom: '5px' }}>Username</div>
             <input
               type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
+              name="username"
               autoComplete="username"
               autoCapitalize="none"
               required
               style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid #ddd4c8',
-                fontSize: '16px',
-                color: '#2c1810',
-                background: '#fff',
-                outline: 'none',
-                boxSizing: 'border-box',
+                width: '100%', padding: '10px 12px',
+                borderRadius: '8px', border: '1px solid #ddd4c8',
+                fontSize: '16px', color: '#2c1810',
+                background: '#fff', outline: 'none', boxSizing: 'border-box',
               }}
             />
           </div>
@@ -88,54 +75,38 @@ export default function LoginPage() {
             <div style={{ fontSize: '12px', color: '#9a7060', marginBottom: '5px' }}>Password</div>
             <input
               type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
+              name="password"
               autoComplete="current-password"
               required
               style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid #ddd4c8',
-                fontSize: '16px',
-                color: '#2c1810',
-                background: '#fff',
-                outline: 'none',
-                boxSizing: 'border-box',
+                width: '100%', padding: '10px 12px',
+                borderRadius: '8px', border: '1px solid #ddd4c8',
+                fontSize: '16px', color: '#2c1810',
+                background: '#fff', outline: 'none', boxSizing: 'border-box',
               }}
             />
           </div>
 
           {error && (
             <div style={{
-              background: '#fff5f0',
-              border: '1px solid #f0c8b8',
-              borderRadius: '8px',
-              padding: '10px 12px',
-              color: '#8b2500',
-              fontSize: '13px',
-              marginBottom: '14px',
+              background: '#fff5f0', border: '1px solid #f0c8b8',
+              borderRadius: '8px', padding: '10px 12px',
+              color: '#8b2500', fontSize: '13px', marginBottom: '14px',
             }}>
-              ⚠️ {error}
+              ⚠️ Invalid username or password
             </div>
           )}
 
           <button
             type="submit"
-            disabled={loading}
             style={{
-              width: '100%',
-              padding: '12px',
-              background: loading ? '#c0a090' : '#8b2500',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '15px',
-              fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer',
+              width: '100%', padding: '12px',
+              background: '#8b2500', color: '#fff',
+              border: 'none', borderRadius: '8px',
+              fontSize: '15px', fontWeight: 'bold', cursor: 'pointer',
             }}
           >
-            {loading ? 'Signing in…' : 'Enter the Cellar'}
+            Enter the Cellar
           </button>
         </form>
 
