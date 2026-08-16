@@ -1,16 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
 
-function LoginForm() {
+export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState(null)
   const [loading, setLoading]   = useState(false)
-  const router = useRouter()
-  const searchParams = useSearchParams()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -23,8 +19,10 @@ function LoginForm() {
         credentials: 'same-origin',
       })
       if (res.ok) {
-        const from = searchParams.get('from') || '/'
-        router.replace(from)
+        // Read ?from= directly from window.location — no useSearchParams needed
+        const params = new URLSearchParams(window.location.search)
+        const from = params.get('from') || '/'
+        window.location.href = from
       } else {
         const data = await res.json()
         setError(data.error || 'Invalid credentials')
@@ -44,13 +42,11 @@ function LoginForm() {
     }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap');`}</style>
 
-      {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: '36px' }}>
         <div style={{ fontSize: '48px', marginBottom: '8px' }}>🍷</div>
         <div style={{
           fontFamily: "'Playfair Display', Georgia, serif",
-          fontSize: '28px', fontWeight: '700', color: '#2c1810',
-          marginBottom: '4px',
+          fontSize: '28px', fontWeight: '700', color: '#2c1810', marginBottom: '4px',
         }}>Cave Personnelle</div>
         <div style={{
           fontSize: '13px', color: '#9a7060',
@@ -58,7 +54,6 @@ function LoginForm() {
         }}>Your Personal Wine Journal</div>
       </div>
 
-      {/* Login card */}
       <div style={{
         background: '#fff', borderRadius: '16px',
         border: '1px solid #e8ddd0', padding: '32px 28px',
@@ -149,13 +144,5 @@ function LoginForm() {
         </div>
       </div>
     </div>
-  )
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
   )
 }

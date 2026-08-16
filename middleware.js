@@ -2,12 +2,10 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'edge'
 
-// Web Crypto API — works in Vercel Edge Runtime (unlike Node crypto module)
 async function verifyToken(token, secret) {
   try {
     if (!token || !secret) return false
     const enc = new TextEncoder()
-    // base64url decode
     const b64 = token.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((token.length * 3) % 4 || 4)
     const { data, sig } = JSON.parse(atob(b64))
     const key = await crypto.subtle.importKey(
@@ -27,21 +25,16 @@ export async function middleware(request) {
   const validPass = process.env.AUTH_PASSWORD
   const secret    = process.env.AUTH_SECRET
 
-  // Auth not configured — allow through (local dev without env vars)
   if (!validUser || !validPass || !secret) return NextResponse.next()
 
   const path = request.nextUrl.pathname
-
-  // Login page and login API are always public
   if (path === '/login' || path === '/api/login') return NextResponse.next()
 
-  // Check for valid session cookie
   const sessionCookie = request.cookies.get('cave_session')
   if (sessionCookie && await verifyToken(sessionCookie.value, secret)) {
     return NextResponse.next()
   }
 
-  // Fall back to HTTP Basic Auth for curl/restore script
   const authHeader = request.headers.get('authorization')
   if (authHeader && authHeader.startsWith('Basic ')) {
     try {
@@ -53,7 +46,6 @@ export async function middleware(request) {
     } catch (_) {}
   }
 
-  // Not authenticated
   if (path.startsWith('/api/')) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
