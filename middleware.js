@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
 
-export const runtime = 'edge'
-
 async function verifyToken(token, secret) {
   try {
     if (!token || !secret) return false
