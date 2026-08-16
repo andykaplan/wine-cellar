@@ -1,30 +1,15 @@
+// Note: this runs in Node.js serverless (not Edge), so Node crypto is fine here
 import { createHmac, timingSafeEqual } from 'crypto'
 
 const SESSION_DAYS = 30
 
-function signToken(payload) {
-  const secret = process.env.AUTH_SECRET
+function signToken(payload, secret) {
   const data = JSON.stringify(payload)
   const sig = createHmac('sha256', secret).update(data).digest('hex')
-  return Buffer.from(JSON.stringify({ data, sig })).toString('base64url')
-}
-
-export function verifyToken(token) {
-  try {
-    const secret = process.env.AUTH_SECRET
-    if (!secret) return null
-    const { data, sig } = JSON.parse(Buffer.from(token, 'base64url').toString())
-    const expected = createHmac('sha256', secret).update(data).digest('hex')
-    // Timing-safe comparison to prevent timing attacks
-    const sigBuf = Buffer.from(sig, 'hex')
-    const expBuf = Buffer.from(expected, 'hex')
-    if (sigBuf.length !== expBuf.length) return null
-    if (!timingSafeEqual(sigBuf, expBuf)) return null
-    const payload = JSON.parse(data)
-    // Check expiry
-    if (payload.exp && Date.now() > payload.exp) return null
-    return payload
-  } catch (_) { return null }
+  const json = JSON.stringify({ data, sig })
+  // base64url encode
+  return Buffer.from(json).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
 export async function POST(request) {
@@ -39,18 +24,25 @@ export async function POST(request) {
       return Response.json({ error: 'Auth not configured' }, { status: 500 })
     }
 
-    // Timing-safe string comparison
-    const userMatch = timingSafeEqual(
-      Buffer.from(username || ''),
-      Buffer.from(validUser)
-    )
-    const passMatch = timingSafeEqual(
-      Buffer.from(password || ''),
-      Buffer.from(validPass)
-    )
+    // Pad to equal length before timing-safe compare to avoid length leaks
+    const userBuf = Buffer.alloc(256)
+    const validUserBuf = Buffer.alloc(256)
+    Buffer.from(username || '').copy(userBuf)
+    Buffer.from(validUser).copy(validUserBuf)
 
-    if (!userMatch || !passMatch) {
-      // Small delay to slow brute force
+    const passBuf = Buffer.alloc(256)
+    const validPassBuf = Buffer.alloc(256)
+    Buffer.from(password || '').copy(passBuf)
+    Buffer.from(validPass).copy(validPassBuf)
+
+    const userMatch = timingSafeEqual(userBuf, validUserBuf)
+    const passMatch = timingSafeEqual(passBuf, validPassBuf)
+
+    // Also verify actual content matches (not just padded buffers)
+    const userOk = userMatch && (username === validUser)
+    const passOk = passMatch && (password === validPass)
+
+    if (!userOk || !passOk) {
       await new Promise(r => setTimeout(r, 500))
       return Response.json({ error: 'Invalid credentials' }, { status: 401 })
     }
@@ -58,7 +50,7 @@ export async function POST(request) {
     const token = signToken({
       user: validUser,
       exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
-    })
+    }, secret)
 
     const maxAge = SESSION_DAYS * 24 * 60 * 60
 
