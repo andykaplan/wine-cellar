@@ -63,7 +63,7 @@ export async function POST(request) {
           'Path=/',
           `Max-Age=${maxAge}`,
           'HttpOnly',
-          'SameSite=Strict',
+          'SameSite=Lax',
           'Secure',
         ].join('; '),
       },
